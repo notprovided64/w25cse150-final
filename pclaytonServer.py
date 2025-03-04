@@ -39,43 +39,46 @@ def send(host, port, contents):
         client_socket.close()
         return 1
 
-
-
-
 def loop(args):
-    host, port = args.server.split(':')
-    client_ip = socket.gethostbyname(socket.gethostname())
-    print(f"{args.id} running on {client_ip}:{port}")
+    # TODO use select here to iterate over all ports we're connected on 
 
-    try:
-        while(True):
-            uin = input()
+    # host, port = args.server.split(':')
+    # client_ip = socket.gethostbyname(socket.gethostname())
 
-            if uin == "/id":
-                print(args.id)
-            elif uin == "/register":
-                send(host, port, get_reg_req(args.id, args.port))
-            elif uin == "/bridge":
-                send(host, port, get_bridge_req(args.id))
-            else:
-                print(INV_IN_MSG)
-    except KeyboardInterrupt:
-        print("Terminating the chat client.\nExiting program")
-        return 0
+    client_info = None # eventually load
+    # print(f"{args.id} running on {client_ip}:{port}")
 
 
+    # TODO impl response for register and bridge
+    # try:
+    #     while(True):
+    #         uin = input()
+    #
+    #         if uin == "/id":
+    #             print(args.id)
+    #         elif uin == "/register":
+    #             send(host, port, get_reg_req(args.id, args.port))
+    #         elif uin == "/bridge":
+    #             send(host, port, get_bridge_req(args.id))
+    #         else:
+    #             print(INV_IN_MSG)
+    # except KeyboardInterrupt:
+    #     print("Terminating the chat server.\nExiting program")
+    #     return 0
 
-def get_reg_req(id, port):
-    host_ip = socket.gethostbyname("localhost")
-    return f"REGISTER\r\nclientID: {id}\r\nIP: {host_ip}\r\nPort: {port}\r\n\r\n"
 
-def get_bridge_req(id):
-    return f"BRIDGE\r\nclientID: {id}\r\n\r\n"
+
+# def get_reg_req(id, port):
+#     host_ip = socket.gethostbyname("localhost")
+#     return f"REGISTER\r\nclientID: {id}\r\nIP: {host_ip}\r\nPort: {port}\r\n\r\n"
+#
+# def get_bridge_req(id):
+#     return f"BRIDGE\r\nclientID: {id}\r\n\r\n"
 
 def main():
     args = parse_args()
 
-    if not validate_args(args):
+    if not validate_port(args.port):
         return 1
 
     loop(args)
