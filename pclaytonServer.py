@@ -1,8 +1,21 @@
-import argparse, socket, select, signal, sys, os
+import argparse, socket, select, signal, sys, os, re
 
 BUFSIZE = 4096
 
 TIMEOUT = 10 # in seconds
+
+class RequestType:
+    REGISTER = 0
+    BRIDGE = 1
+
+class Request():
+    def __init__(self, RequestType, id, args):
+        self.type = RequestType
+        self.id = id
+        self.args = args
+
+reg_req_regex = r"^REGISTER\r\nclientID: (?P<id>\S+)\r\nIP: (?P<host_ip>[\d\.]+)\r\nPort: (?P<port>\d+)\r\n\r\n$"
+brg_req_regex = r"^BRIDGE\r\nclientID: (?P<id>\S+)\r\n\r\n$"
 
 def validate_port(port):
     return 1 <= port <= 65535
@@ -16,64 +29,144 @@ def parse_args():
     return args
 
 def send(host, port, contents):
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.settimeout(TIMEOUT)
+    sc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sc.settimeout(TIMEOUT)
 
     try:
-        client_socket.connect((host, int(port)))
-        client_socket.send(contents.encode())
-        client_socket.close()
+        sc.connect((host, int(port)))
+        sc.send(contents.encode())
+        sc.close()
         
     except socket.gaierror:
         print(f"address-related error connecting to {host} on port {port}")
-        client_socket.close()
+        sc.close()
         return 1 #replace with exit(1)
     
     except socket.timeout:
         print(f"connection timed out when trying to connect to {host} on port {port}")
-        client_socket.close()
+        sc.close()
         return 1
     
     except socket.error as err:
         print(f"socket error occurred: {err}")
-        client_socket.close()
+        sc.close()
         return 1
 
-def loop(args):
+def parse_message(data):
+    try:
+        msg = data.decode('utf-8')
+    except Exception as e:
+        print(f"error decoding: {e}")
+        return None
+
+    register_match = re.search(reg_req_regex, msg)
+    if register_match:
+        id = register_match.group(1)
+        ip = register_match.group(2)
+        port = register_match.group(3)
+
+        return Request(RequestType.REGISTER, id, {"ip":ip, "port":port})
+
+    bridge_match = re.search(brg_req_regex, msg)
+    if bridge_match:
+        id = bridge_match.group(1)
+
+        return Request(RequestType.BRIDGE, id, None)
+
+    print("invalid message recieved")
+    return None
+
+# TODO restructure code so that we operate based around Client objects instead of requests
+
+def handle_request(request:Request, reg_info, bridge_id):
+    if request.type == RequestType.REGISTER:
+        print(f"REGISTER: {request.id} from {request.args['ip']}:{request.args['port']} recieved")
+        return f"REGACK\r\nclientID: {request.id}\r\nIP: {request.args['ip']}\r\nPort: {request.args['port']}\r\nStatus: registered\r\n\r\n"
+
+    if request.type == RequestType.BRIDGE:
+        client_info = reg_info.get(request.id)
+        bridge_info = reg_info.get(bridge_id)
+        if bridge_info is None:
+            id = ""
+            ip = ""
+            port = ""
+            ip_port = ""
+        else:
+            id = bridge_info.id
+            ip = bridge_info.args['ip']
+            port = bridge_info.args['port']
+            ip_port = f"{ip}:{port}"
+
+            # think we only print this when the second user connects
+            print(f"BRIDGE: {client_info.id} {client_info.args['ip']}:{client_info.args['port']} {id} {ip_port}")
+
+        return f"BRIDGEACK\r\nclientID: {id}\r\nIP: {ip}\r\nPort: {port}\r\n\r\n"
+
+    return None
+
+def poll(args):
     # TODO use select here to iterate over all ports we're connected on 
+    port = args.port
+    server_ip = socket.gethostbyname(socket.gethostname())
 
-    # host, port = args.server.split(':')
-    # client_ip = socket.gethostbyname(socket.gethostname())
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((server_ip, port))
+    server_socket.listen(5) # arg here is size of backlog
+    server_socket.setblocking(False)
 
-    client_info = None # eventually load
-    # print(f"{args.id} running on {client_ip}:{port}")
+    sockets = [server_socket]
 
+    reg_info = {} # eventually load
+    bridge_id = None # eventually load
 
-    # TODO impl response for register and bridge
-    # try:
-    #     while(True):
-    #         uin = input()
-    #
-    #         if uin == "/id":
-    #             print(args.id)
-    #         elif uin == "/register":
-    #             send(host, port, get_reg_req(args.id, args.port))
-    #         elif uin == "/bridge":
-    #             send(host, port, get_bridge_req(args.id))
-    #         else:
-    #             print(INV_IN_MSG)
-    # except KeyboardInterrupt:
-    #     print("Terminating the chat server.\nExiting program")
-    #     return 0
+    print(f"server running on {server_ip}:{port}")
 
 
+    while True:
+        # any valid readable socket should also be writable
+        readable, _, exceptional = select.select(sockets, [], sockets)
+        
+        for s in readable:
+            if s is server_socket:
+                # handle new connection
+                client_socket, _ = s.accept() # client_addr not needed, we use what's advertised in reg info
+                client_socket.setblocking(False)
+                sockets.append(client_socket)
+            else:
+                try:
+                    data = s.recv(BUFSIZE)
+                    if not data:
+                        sockets.remove(s)
+                        s.close()
+                        continue
 
-# def get_reg_req(id, port):
-#     host_ip = socket.gethostbyname("localhost")
-#     return f"REGISTER\r\nclientID: {id}\r\nIP: {host_ip}\r\nPort: {port}\r\n\r\n"
-#
-# def get_bridge_req(id):
-#     return f"BRIDGE\r\nclientID: {id}\r\n\r\n"
+                    request = parse_message(data)
+                    if request is None:
+                        raise Exception("no data recieved")
+
+                    # register user info
+                    if request.type == RequestType.REGISTER:
+                        reg_info[request.id] = request
+
+                    output = handle_request(request, reg_info, bridge_id)
+                    if output is None:
+                        raise Exception("failed to generate request response")
+
+                    # if we bridged and another user hasn't already, save our registration info for the next user
+                    if request.type == RequestType.BRIDGE and bridge_id == None:
+                        bridge_id = request.id
+
+                    s.send(output.encode())
+
+                except Exception as e:
+                    print(f"Error: {e}")
+                    sockets.remove(s)
+                    s.close()
+
+
+        for s in exceptional:
+            sockets.remove(s)
+            s.close()
 
 def main():
     args = parse_args()
@@ -81,7 +174,7 @@ def main():
     if not validate_port(args.port):
         return 1
 
-    loop(args)
+    poll(args)
 
 if __name__ == "__main__":
     main()

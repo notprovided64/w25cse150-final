@@ -60,22 +60,19 @@ def send(host, port, contents):
     try:
         client_socket.connect((host, int(port)))
         client_socket.send(contents.encode())
+
+        data = client_socket.recv(BUFSIZE)
+        msg = data.decode("utf-8")
+        if msg == "":
+            raise Exception("empty response recieved")
         client_socket.close()
+
+        return msg
         
-    except socket.gaierror:
-        print(f"address-related error connecting to {host} on port {port}")
+    except Exception as e:
+        print(f"error occurred on {host}:{port} : {e}")
         client_socket.close()
-        return 1 #replace with exit(1)
-    
-    except socket.timeout:
-        print(f"connection timed out when trying to connect to {host} on port {port}")
-        client_socket.close()
-        return 1
-    
-    except socket.error as err:
-        print(f"socket error occurred: {err}")
-        client_socket.close()
-        return 1
+        return None
 
 def get_reg_req(id, port):
     host_ip = socket.gethostbyname("localhost")
@@ -83,6 +80,41 @@ def get_reg_req(id, port):
 
 def get_bridge_req(id):
     return f"BRIDGE\r\nclientID: {id}\r\n\r\n"
+
+#TODO impl
+def parse_bridgeack(msg):
+    return None
+
+def chat(connection_info):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(TIMEOUT)
+
+    try:
+        s.connect((connection_info.host, int(connection_info.port)))
+        s.send("".encode()) # put chat request here if needed
+        while True:
+            uin = input()
+            if uin == "/quit":
+                raise KeyboardInterrupt # want same behavior anyways
+            s.send(uin.encode())
+
+            data = s.recv(BUFSIZE)
+            msg = data.decode("utf-8")
+            if msg == "QUIT":
+                print("peer ended chat")
+                raise KeyboardInterrupt
+            print(msg)
+
+        s.close()
+
+        return msg
+        
+    except KeyboardInterrupt:
+        s.close()
+        exit()
+    except Exception as e:
+        print(f"error occurred while chatting: {e}")
+        s.close()
 
 def loop(args):
     host, port = args.server.split(':')
@@ -98,12 +130,28 @@ def loop(args):
             elif uin == "/register":
                 send(host, port, get_reg_req(args.id, args.port))
             elif uin == "/bridge":
-                send(host, port, get_bridge_req(args.id))
+                msg = send(host, port, get_bridge_req(args.id))
+
+                connection_info = parse_bridgeack(msg)
+                if connection_info is not None: #if validly formatted response
+                    if connection_info.id is "":#if empty bridgeack
+                        wait_for_chat() #TODO impl
+
+                    chat(connection_info)
+                    exit()
+
             else:
                 print(INV_IN_MSG)
+
+
+
+
     except KeyboardInterrupt:
-        print("Terminating the chat client.\nExiting program")
-        return 0
+        exit()
+
+def exit():
+    print("Terminating the chat client.\nExiting program")
+    sys.exit(0)
 
 def main():
     args = parse_args()
