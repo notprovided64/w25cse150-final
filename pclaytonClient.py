@@ -112,7 +112,7 @@ def parse_bridgeack(msg):
 
     return None
 
-def chat(args, connection_info, wait):
+def chat(args, connection_info):
     serv_host, serv_port = args.server.split(':')
 
     s = None
@@ -165,6 +165,8 @@ def chat(args, connection_info, wait):
         if s is not None:
             s.close()
 
+def chatLoop():
+
 def loop(args):
     host, port = args.server.split(':')
     client_ip = socket.gethostbyname(socket.gethostname())
@@ -182,7 +184,7 @@ def loop(args):
                 send(host, port, get_reg_req(args.id, args.port))
             elif uin == "/bridge":
                 msg = send(host, port, get_bridge_req(args.id))
-
+            elif uin == "/chat":
                 connection_info = parse_bridgeack(msg)
                 if connection_info is not None:
                     print(connection_info)
