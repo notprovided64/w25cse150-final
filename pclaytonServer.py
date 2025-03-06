@@ -61,7 +61,7 @@ def parse_message(data):
 
     register_match = re.search(reg_req_regex, msg)
     if register_match:
-        id = register_match.group(1)
+        id = register_match.group(1) #probably should restrict valid ids, don't want someone naming themselves ""
         ip = register_match.group(2)
         port = register_match.group(3)
 
@@ -114,7 +114,7 @@ def poll(args):
     server_socket.listen(5) # arg here is size of backlog
     server_socket.setblocking(False)
 
-    sockets = [server_socket]
+    sockets = [server_socket, sys.stdin]
 
     reg_info = {} # eventually load
     bridge_id = None # eventually load
@@ -132,6 +132,17 @@ def poll(args):
                 client_socket, _ = s.accept() # client_addr not needed, we use what's advertised in reg info
                 client_socket.setblocking(False)
                 sockets.append(client_socket)
+            elif s is sys.stdin:
+                cmd = sys.stdin.readline().strip()
+                if cmd == "/info":
+                    print("\nRegistered Clients Info:")
+                    if reg_info:
+                        for client_id, info in reg_info.items():
+                            print(f"{client_id}: {info.args}") # info should just be args
+                    else:
+                        print("No clients registered.")
+                else:
+                    print(f"Unknown command: {cmd}")
             else:
                 try:
                     data = s.recv(BUFSIZE)
@@ -159,6 +170,7 @@ def poll(args):
                     s.send(output.encode())
 
                 except Exception as e:
+                    print(s)
                     print(f"Error: {e}")
                     sockets.remove(s)
                     s.close()
@@ -174,7 +186,12 @@ def main():
     if not validate_port(args.port):
         return 1
 
-    poll(args)
+    try:
+        poll(args)
+    except KeyboardInterrupt:
+        print("Terminating the chat server.\nExiting program")
+        sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
