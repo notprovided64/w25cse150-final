@@ -73,7 +73,7 @@ def parse_message(data):
 
         return Request(RequestType.BRIDGE, id, None)
 
-    print("invalid message recieved")
+    print("Malformed incoming message", file=sys.stderr)
     return None
 
 # TODO restructure code so that we operate based around Client objects instead of requests
@@ -83,7 +83,7 @@ def handle_request(request:Request, reg_info, bridge_id):
         print(f"REGISTER: {request.id} from {request.args['ip']}:{request.args['port']} recieved")
         return f"REGACK\r\nclientID: {request.id}\r\nIP: {request.args['ip']}\r\nPort: {request.args['port']}\r\nStatus: registered\r\n\r\n"
 
-    if request.type == RequestType.BRIDGE:
+    elif request.type == RequestType.BRIDGE:
         client_info = reg_info.get(request.id)
         bridge_info = reg_info.get(bridge_id)
         if bridge_info is None:
@@ -97,8 +97,7 @@ def handle_request(request:Request, reg_info, bridge_id):
             port = bridge_info.args['port']
             ip_port = f"{ip}:{port}"
 
-            # think we only print this when the second user connects
-            print(f"BRIDGE: {client_info.id} {client_info.args['ip']}:{client_info.args['port']} {id} {ip_port}")
+        print(f"BRIDGE: {client_info.id} {client_info.args['ip']}:{client_info.args['port']} {id} {ip_port}")
 
         return f"BRIDGEACK\r\nclientID: {id}\r\nIP: {ip}\r\nPort: {port}\r\n\r\n"
 
@@ -135,12 +134,8 @@ def poll(args):
             elif s is sys.stdin:
                 cmd = sys.stdin.readline().strip()
                 if cmd == "/info":
-                    print("\nRegistered Clients Info:")
-                    if reg_info:
-                        for client_id, info in reg_info.items():
-                            print(f"{client_id}: {info.args}") # info should just be args
-                    else:
-                        print("No clients registered.")
+                    for client_id, info in reg_info.items():
+                        print(f"{client_id} {info.args['ip']}:{info.args['port']}")
                 else:
                     print(f"Unknown command: {cmd}")
             else:

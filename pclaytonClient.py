@@ -123,9 +123,9 @@ def wait(args):
         server_socket.bind((serv_host, int(serv_port)))
         server_socket.settimeout(TIMEOUT * 10)
         server_socket.listen(1)
-        s, s_addr = server_socket.accept()
+        s, _ = server_socket.accept()
 
-        data = s.recv(BUFSIZE) #hopefully should be a /CHAT
+        data = s.recv(BUFSIZE) # hopefully should be a /CHAT
         if data is None:
             raise Exception()
         msg = data.decode()
@@ -137,43 +137,36 @@ def wait(args):
         ip = match.group(2)
         port = match.group(3)
 
-        # can delete
-        client_ip, client_port = s_addr
-        print(f"socket info: {client_ip=}{client_port=}")
-
         print(f"Incoming chat request from {id} {ip}:{port}")
         chat_loop(s, False)
 
     except KeyboardInterrupt:
         if s is not None:
             s.close()
-        exit()
+        exit(1)
     except Exception as e:
         print(f"error occurred while waiting: {e}")
         if s is not None:
             s.close()
 
 def chat_init(args, info):
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.settimeout(TIMEOUT)
+    cs = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    cs.settimeout(TIMEOUT)
 
     try:
-        localhost = socket.gethostbyname("localhost")
+        cliIP = socket.gethostbyname("localhost")
         port = args.port
-
-        print(f"shouldn't exist{info.host}")
-        client_socket.connect((info.host, info.port))
-        client_socket.send(f"CHAT\r\nclientID: {args.id}\r\nIP: {localhost}\r\nPort: {port}\r\n\r\n".encode())
-        #parse input message on s, if it's "CHAT", then call loop
-        chat_loop(client_socket, True)
+        cs.connect((info.host, info.port))
+        cs.send(f"CHAT\r\nclientID: {args.id}\r\nIP: {cliIP}\r\nPort: {port}\r\n\r\n".encode())
+        chat_loop(cs, True)
 
     except KeyboardInterrupt:
-        client_socket.close()
-        exit()
+        cs.close()
+        exit(1)
     except Exception as e:
         print(f"error occurred while chatting: {e}")
-        client_socket.close()
-
+        cs.close()
+        exit(0)
 
 def chat_loop(s:socket.SocketType, is_writing:bool):
     try:
@@ -199,15 +192,15 @@ def chat_loop(s:socket.SocketType, is_writing:bool):
                 
     except KeyboardInterrupt:
         s.send("QUIT".encode())
-        exit()        
+        exit(1)        
 
 
 def loop(args):
     host, port = args.server.split(':')
     client_ip = socket.gethostbyname(socket.gethostname())
-    print(f"{args.id} running on {client_ip}:{port}")
+    print(f"{args.id} running on {client_ip}:{args.port}")
     bridge_info = None
-
+    hasNotReg = True
     try:
         while(True):
             uin = input()
@@ -215,35 +208,35 @@ def loop(args):
             if uin == "/id":
                 print(args.id)
             elif uin == "/quit":
-                exit()
+                exit(1)
             elif uin == "/register":
                 send(host, port, get_reg_req(args.id, args.port))
+                hasNotReg = False
             elif uin == "/bridge":
+                if hasNotReg:
+                    print("Must register first")
+                    continue
                 msg = send(host, port, get_bridge_req(args.id))
                 connection_info = parse_bridgeack(msg)
-                print(connection_info.host, connection_info.port)
-
                 if connection_info.is_empty():
                     wait(args)
-                    continue
 
                 bridge_info = connection_info
             elif uin == "/chat":        
                 if not bridge_info:
                     print("you don't have anything saved")
                     continue
-
                 chat_init(args, bridge_info)
 
             else:
                 print(INV_IN_MSG)
 
     except KeyboardInterrupt:
-        exit()
+        exit(1)
 
-def exit():
+def exit(mode):
     print("Terminating the chat client.\nExiting program")
-    sys.exit(0)
+    sys.exit(mode)
 
 def main():
     args = parse_args()
