@@ -148,7 +148,8 @@ def poll(args):
 
                     request = parse_message(data)
                     if request is None:
-                        raise Exception("no data recieved")
+                        s.close()
+                        exit(0)
 
                     # register user info
                     if request.type == RequestType.REGISTER:
